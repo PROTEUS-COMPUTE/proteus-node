@@ -32,6 +32,13 @@ mod errors {
         /// The caller is requesting removing more stake than there exists in the staking account.
         /// See: "[remove_stake()]".
         NotEnoughStakeToWithdraw,
+        /// Stake was added with a lock and its unlock block has not passed yet.
+        StakeStillLocked,
+        /// Unlock requested on a stake whose lock has not reached its term.
+        StakeNotMatured,
+        /// Lock duration outside the accepted range, see MIN_LOCK_BLOCKS and
+        /// MAX_LOCK_BLOCKS.
+        InvalidLockDuration,
         /// The caller is requesting to set weights but the caller has less than minimum stake
         /// required to set weights (less than WeightsMinStake).
         NotEnoughStakeToSetWeights,

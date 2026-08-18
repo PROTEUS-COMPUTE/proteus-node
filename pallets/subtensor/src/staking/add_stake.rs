@@ -1,5 +1,10 @@
 use super::*;
 
+/// A lock shorter than a day is not a commitment, and one longer than ten years
+/// is a typo. Both bounds are in blocks, at 12 seconds per block.
+pub const MIN_LOCK_BLOCKS: u64 = 7_200;
+pub const MAX_LOCK_BLOCKS: u64 = 26_280_000;
+
 impl<T: Config> Pallet<T> {
     /// ---- The implementation for the extrinsic add_stake: Adds stake to a hotkey account.
     ///
@@ -99,6 +104,42 @@ impl<T: Config> Pallet<T> {
         Self::deposit_event(Event::StakeAdded(hotkey, actual_amount_to_stake));
 
         // Ok and return.
+        Ok(())
+    }
+
+    /// Add stake AND lock it for `lock_blocks` blocks. The stake is added
+    /// exactly like do_add_stake; on top, the amount actually staked is
+    /// recorded as locked until `now + lock_blocks`, and remove_stake refuses
+    /// to withdraw the locked amount before then. Adding more locked stake sums
+    /// the amounts and keeps the LATEST unlock block. Nothing is held by us.
+    pub fn do_add_stake_locked(
+        origin: T::RuntimeOrigin,
+        hotkey: T::AccountId,
+        stake_to_be_added: u64,
+        lock_blocks: u64,
+    ) -> dispatch::DispatchResult {
+        let coldkey = ensure_signed(origin.clone())?;
+        // A zero-block lock would be already matured on creation, which is a
+        // standing permission for anyone to settle the position rather than a
+        // commitment. The upper bound keeps a typo from locking stake for
+        // longer than the chain is likely to exist.
+        ensure!(
+            lock_blocks >= MIN_LOCK_BLOCKS && lock_blocks <= MAX_LOCK_BLOCKS,
+            Error::<T>::InvalidLockDuration
+        );
+        // Measure the real increase: do_add_stake may stake less than asked.
+        let before = Self::get_stake_for_coldkey_and_hotkey(&coldkey, &hotkey);
+        Self::do_add_stake(origin, hotkey.clone(), stake_to_be_added)?;
+        let after = Self::get_stake_for_coldkey_and_hotkey(&coldkey, &hotkey);
+        let added = after.saturating_sub(before);
+        let now = Self::get_current_block_as_u64();
+        let unlock = now.saturating_add(lock_blocks);
+        StakeLock::<T>::mutate(&coldkey, &hotkey, |lock| {
+            lock.0 = lock.0.saturating_add(added);
+            if unlock > lock.1 {
+                lock.1 = unlock;
+            }
+        });
         Ok(())
     }
 }

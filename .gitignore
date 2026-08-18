@@ -46,3 +46,7 @@ bt.snap
 
 # localnet spec
 scripts/specs/local.json
+# proteus: local build and tooling leftovers, never published
+*.bak-lock
+*.bak-unlock
+.codegraph/

@@ -165,8 +165,25 @@ impl<T: Config> Pallet<T> {
             Stake::<T>::insert(&hotkey, new_coldkey, new_stake.saturating_add(old_stake));
             // Remove the value from the old account.
             Stake::<T>::remove(&hotkey, old_coldkey);
+
+            // The lock follows the stake. Left behind, it would both free the
+            // new coldkey to withdraw immediately and re-lock any later stake
+            // the old coldkey happens to place on the same hotkey. Amounts add
+            // up and the later unlock block wins, as when locking twice.
+            let (old_locked, old_unlock) = StakeLock::<T>::get(old_coldkey, &hotkey);
+            if old_locked > 0 {
+                StakeLock::<T>::remove(old_coldkey, &hotkey);
+                StakeLock::<T>::mutate(new_coldkey, &hotkey, |lock| {
+                    lock.0 = lock.0.saturating_add(old_locked);
+                    if old_unlock > lock.1 {
+                        lock.1 = old_unlock;
+                    }
+                });
+                weight.saturating_accrue(T::DbWeight::get().reads_writes(2, 2));
+            }
+
             // Add the weight for the read and write.
-            weight.saturating_accrue(T::DbWeight::get().reads_writes(2, 2));
+            weight.saturating_accrue(T::DbWeight::get().reads_writes(3, 2));
         }
 
         // 4. Swap StakeDeltaSinceLastEmissionDrain

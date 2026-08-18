@@ -623,6 +623,41 @@ mod dispatches {
             Self::do_remove_stake(origin, hotkey, amount_unstaked)
         }
 
+        /// Add stake and lock it for `lock_blocks` blocks. Same effect as
+        /// add_stake, plus the staked amount cannot be removed before the
+        /// unlock block. Non-custodial: the stake stays under the caller's
+        /// coldkey; only early withdrawal is refused.
+        #[pallet::call_index(9)]
+        #[pallet::weight((Weight::from_parts(124_000_000, 0)
+		.saturating_add(T::DbWeight::get().reads(10))
+		.saturating_add(T::DbWeight::get().writes(8)), DispatchClass::Normal, Pays::No))]
+        pub fn add_stake_locked(
+            origin: OriginFor<T>,
+            hotkey: T::AccountId,
+            amount_staked: u64,
+            lock_blocks: u64,
+        ) -> DispatchResult {
+            Self::do_add_stake_locked(origin, hotkey, amount_staked, lock_blocks)
+        }
+
+        /// Return a matured locked stake to its owner's free balance. Once the
+        /// lock term has passed the money leaves staking automatically; a daily
+        /// job calls this for every lock that has reached its unlock block.
+        /// Permissionless: the funds move to `coldkey`, never to the caller, so
+        /// there is nothing to steal, and Pays::Yes keeps it from being spammed
+        /// for free. A lock that is missing or not yet matured is refused.
+        #[pallet::call_index(10)]
+        #[pallet::weight((Weight::from_parts(124_000_000, 0)
+		.saturating_add(T::DbWeight::get().reads(10))
+		.saturating_add(T::DbWeight::get().writes(8)), DispatchClass::Normal))]
+        pub fn unlock_matured_stake(
+            origin: OriginFor<T>,
+            coldkey: T::AccountId,
+            hotkey: T::AccountId,
+        ) -> DispatchResult {
+            Self::do_unlock_matured_stake(origin, coldkey, hotkey)
+        }
+
         /// Serves or updates axon /prometheus information for the neuron associated with the caller. If the caller is
         /// already registered the metadata is updated. If the caller is not registered this call throws NotRegistered.
         ///

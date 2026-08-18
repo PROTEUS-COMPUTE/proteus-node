@@ -5,9 +5,9 @@ description = "Implementation of the bittensor blockchain"
 authors = ["Substrate DevHub <https://github.com/substrate-developer-hub>"]
 homepage = "https://substrate.io/"
 edition = "2021"
-license = "Unlicense"
+license = "MIT"
 publish = false
-repository = "https://github.com/opentensor/subtensor"
+repository = "https://github.com/PROTEUS-COMPUTE/proteus-node"
 
 [dependencies]
 node-subtensor = { path = "node", version = "4.0.0-dev" }
@@ -236,3 +236,7 @@ runtime-benchmarks = [
     "node-subtensor-runtime/runtime-benchmarks",
 ]
 metadata-hash = ["node-subtensor-runtime/metadata-hash"]
+
+
+[patch."https://github.com/paritytech/substrate-curves"]
+sp-ark-bls12-381 = { git = "https://github.com/paritytech/arkworks-substrate", rev = "caa2eed74beb885dd07c7db5f916f2281dad818f" }

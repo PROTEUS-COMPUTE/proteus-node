@@ -66,7 +66,7 @@ pub fn finney_mainnet_config() -> Result<ChainSpec, String> {
 
     // Give front-ends necessary data to present to users
     let mut properties = sc_service::Properties::new();
-    properties.insert("tokenSymbol".into(), "TAO".into());
+    properties.insert("tokenSymbol".into(), "PRTS".into());
     properties.insert("tokenDecimals".into(), 9.into());
     properties.insert("ss58Format".into(), 42.into());
 

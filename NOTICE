@@ -1,0 +1,50 @@
+PROTEUS chain node
+
+Built on subtensor by Opentensor Foundation.
+
+  Upstream:  https://github.com/opentensor/subtensor
+  Base:      tag v1.2.5 (commit 8f39a58), the last release before dTAO.
+             PROTEUS is a single-token chain, which is why the fork is taken
+             from that era rather than from a later one.
+
+LICENSING
+
+  Upstream code    The Unlicense, a public domain dedication. See LICENSE.
+                   Most crate manifests declare Unlicense, a few declare MIT
+                   or MIT-0. Two components come from Parity and are
+                   Apache-2.0: pallets/collective and support/procedural-fork.
+                   The upstream readme, kept verbatim as README-subtensor.md,
+                   carries MIT, Copyright (c) 2021 Yuma Rao.
+
+  PROTEUS changes  MIT, Copyright (c) 2026 Proteus Compute.
+                   See LICENSE-PROTEUS. This covers the files listed below.
+
+PROVENANCE
+
+The Unlicense asks nothing of us. The list below is published anyway, so that
+anyone can see exactly what PROTEUS changed rather than take our word for it.
+
+  runtime/src/lib.rs
+  pallets/subtensor/src/lib.rs
+  pallets/subtensor/src/macros/dispatches.rs
+  pallets/subtensor/src/macros/errors.rs
+  pallets/subtensor/src/staking/add_stake.rs
+  pallets/subtensor/src/staking/remove_stake.rs
+  pallets/subtensor/src/tests/staking.rs
+  node/src/chain_spec/finney.rs
+  node/src/chain_spec/localnet.rs
+  Cargo.toml
+  Cargo.lock
+  rust-toolchain.toml
+
+  git diff v1.2.5 HEAD -- runtime pallets node Cargo.toml Cargo.lock rust-toolchain.toml
+  12 files changed, 306 insertions(+), 10 deletions(-)
+
+The remainder of the diff against v1.2.5 is this NOTICE, LICENSE-PROTEUS,
+README.md, the renamed README-subtensor.md, .gitignore and the two chain
+specification files. Those are additions, not modifications of upstream code.
+
+TRADEMARKS
+
+No trademark of Opentensor Foundation is used or implied. "Fork of subtensor
+v1.2.5" is a statement of provenance, not of endorsement.

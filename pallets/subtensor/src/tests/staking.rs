@@ -5,6 +5,8 @@ use frame_support::{assert_err, assert_noop, assert_ok, traits::Currency};
 use frame_system::Config;
 
 use super::mock::*;
+use crate::staking::add_stake::{MAX_LOCK_BLOCKS, MIN_LOCK_BLOCKS};
+use frame_support::pallet_prelude::Weight;
 use crate::*;
 use frame_support::dispatch::{DispatchClass, DispatchInfo, GetDispatchInfo, Pays};
 use frame_support::sp_runtime::DispatchError;
@@ -2770,5 +2772,228 @@ fn test_mining_emission_drain_validator_valiminer_miner() {
         assert_eq!(validator_emission, total_emission / 4);
         assert_eq!(valiminer_emission, total_emission / 2);
         assert_eq!(miner_emission, total_emission / 4);
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Locked staking: added via add_stake_locked, cannot be withdrawn before the
+// unlock block. Non-custodial: the funds stay under the coldkey the whole time,
+// the chain only refuses early removal. Added 2026-08-16.
+// ---------------------------------------------------------------------------
+#[test]
+fn test_add_stake_locked_blocks_early_removal() {
+    new_test_ext(1).execute_with(|| {
+        let hotkey = U256::from(981);
+        let coldkey = U256::from(982);
+        let netuid: u16 = 1;
+        add_network(netuid, 13, 0);
+        register_ok_neuron(netuid, hotkey, coldkey, 0);
+        SubtensorModule::add_balance_to_coldkey_account(&coldkey, 10_000);
+        SubtensorModule::set_target_stakes_per_interval(100);
+
+        // Lock 1000 for the shortest accepted term, a day of blocks.
+        assert_ok!(SubtensorModule::add_stake_locked(
+            <<Test as Config>::RuntimeOrigin>::signed(coldkey),
+            hotkey,
+            1000,
+            MIN_LOCK_BLOCKS
+        ));
+        assert_eq!(
+            SubtensorModule::get_stake_for_coldkey_and_hotkey(&coldkey, &hotkey),
+            1000
+        );
+        let (locked, unlock) = crate::StakeLock::<Test>::get(&coldkey, &hotkey);
+        assert_eq!(locked, 1000);
+        assert_eq!(unlock, 1 + MIN_LOCK_BLOCKS);
+
+        // While locked, not one rao of the locked amount can leave.
+        assert_noop!(
+            SubtensorModule::remove_stake(
+                <<Test as Config>::RuntimeOrigin>::signed(coldkey),
+                hotkey,
+                1
+            ),
+            Error::<Test>::StakeStillLocked
+        );
+
+        // Free stake ABOVE the lock is always withdrawable: add 500 unlocked.
+        assert_ok!(SubtensorModule::add_stake(
+            <<Test as Config>::RuntimeOrigin>::signed(coldkey),
+            hotkey,
+            500
+        ));
+        assert_ok!(SubtensorModule::remove_stake(
+            <<Test as Config>::RuntimeOrigin>::signed(coldkey),
+            hotkey,
+            500
+        ));
+        // ...but still nothing from the locked part.
+        assert_noop!(
+            SubtensorModule::remove_stake(
+                <<Test as Config>::RuntimeOrigin>::signed(coldkey),
+                hotkey,
+                1
+            ),
+            Error::<Test>::StakeStillLocked
+        );
+
+        // Past the unlock block, the whole amount comes out and the lock clears.
+        run_to_block(MIN_LOCK_BLOCKS + 2);
+        assert_ok!(SubtensorModule::remove_stake(
+            <<Test as Config>::RuntimeOrigin>::signed(coldkey),
+            hotkey,
+            1000
+        ));
+        let (locked_after, _) = crate::StakeLock::<Test>::get(&coldkey, &hotkey);
+        assert_eq!(locked_after, 0);
+    });
+}
+
+#[test]
+fn test_unlock_matured_stake_returns_everything() {
+    new_test_ext(1).execute_with(|| {
+        let hotkey = U256::from(991);
+        let coldkey = U256::from(992);
+        let anyone = U256::from(999); // a third party, to prove it is permissionless
+        let netuid: u16 = 1;
+        add_network(netuid, 13, 0);
+        register_ok_neuron(netuid, hotkey, coldkey, 0);
+        SubtensorModule::add_balance_to_coldkey_account(&coldkey, 10_000);
+        SubtensorModule::set_target_stakes_per_interval(100);
+
+        // Lock 1000 for the shortest accepted term. Free balance drops to 9000.
+        assert_ok!(SubtensorModule::add_stake_locked(
+            <<Test as Config>::RuntimeOrigin>::signed(coldkey),
+            hotkey,
+            1000,
+            MIN_LOCK_BLOCKS
+        ));
+        assert_eq!(Balances::free_balance(coldkey), 9000);
+        assert_eq!(
+            SubtensorModule::get_stake_for_coldkey_and_hotkey(&coldkey, &hotkey),
+            1000
+        );
+
+        // Before the term nobody can force the unlock, not even a third party.
+        assert_noop!(
+            SubtensorModule::unlock_matured_stake(
+                <<Test as Config>::RuntimeOrigin>::signed(anyone),
+                coldkey,
+                hotkey
+            ),
+            Error::<Test>::StakeNotMatured
+        );
+
+        // Past the unlock block, ANYONE can settle it, and the money returns to
+        // the OWNER (coldkey), never to the caller.
+        run_to_block(MIN_LOCK_BLOCKS + 2);
+        assert_ok!(SubtensorModule::unlock_matured_stake(
+            <<Test as Config>::RuntimeOrigin>::signed(anyone),
+            coldkey,
+            hotkey
+        ));
+
+        // Everything is back in the owner free balance, nothing left staked, lock gone.
+        assert_eq!(Balances::free_balance(coldkey), 10_000);
+        assert_eq!(
+            SubtensorModule::get_stake_for_coldkey_and_hotkey(&coldkey, &hotkey),
+            0
+        );
+        let (locked_after, _) = crate::StakeLock::<Test>::get(&coldkey, &hotkey);
+        assert_eq!(locked_after, 0);
+
+        // A repeat call is a harmless refusal: the lock is already gone.
+        assert_noop!(
+            SubtensorModule::unlock_matured_stake(
+                <<Test as Config>::RuntimeOrigin>::signed(anyone),
+                coldkey,
+                hotkey
+            ),
+            Error::<Test>::StakeNotMatured
+        );
+    });
+}
+
+// A lock of zero blocks would be matured the moment it is created, which is a
+// standing permission for anyone to settle the position rather than a
+// commitment. The upper bound catches a duration typed with too many zeros.
+#[test]
+fn test_add_stake_locked_rejects_out_of_range_durations() {
+    new_test_ext(1).execute_with(|| {
+        let hotkey = U256::from(991);
+        let coldkey = U256::from(992);
+        let netuid: u16 = 1;
+        add_network(netuid, 13, 0);
+        register_ok_neuron(netuid, hotkey, coldkey, 0);
+        SubtensorModule::add_balance_to_coldkey_account(&coldkey, 10_000);
+        SubtensorModule::set_target_stakes_per_interval(100);
+
+        for bad in [0u64, MIN_LOCK_BLOCKS - 1, MAX_LOCK_BLOCKS + 1] {
+            assert_noop!(
+                SubtensorModule::add_stake_locked(
+                    <<Test as Config>::RuntimeOrigin>::signed(coldkey),
+                    hotkey,
+                    1000,
+                    bad
+                ),
+                Error::<Test>::InvalidLockDuration
+            );
+        }
+
+        // Nothing was staked and no lock was written by the refused calls.
+        assert_eq!(
+            SubtensorModule::get_stake_for_coldkey_and_hotkey(&coldkey, &hotkey),
+            0
+        );
+        let (locked, _) = crate::StakeLock::<Test>::get(&coldkey, &hotkey);
+        assert_eq!(locked, 0);
+    });
+}
+
+// The lock follows the stake when the coldkey is swapped. Left behind, it would
+// free the new coldkey to withdraw at once, and wrongly re-lock any later stake
+// the old coldkey placed on the same hotkey.
+#[test]
+fn test_stake_lock_follows_coldkey_swap() {
+    new_test_ext(1).execute_with(|| {
+        let hotkey = U256::from(993);
+        let old_coldkey = U256::from(994);
+        let new_coldkey = U256::from(995);
+        let netuid: u16 = 1;
+        add_network(netuid, 13, 0);
+        register_ok_neuron(netuid, hotkey, old_coldkey, 0);
+        SubtensorModule::add_balance_to_coldkey_account(&old_coldkey, 10_000);
+        SubtensorModule::set_target_stakes_per_interval(100);
+
+        assert_ok!(SubtensorModule::add_stake_locked(
+            <<Test as Config>::RuntimeOrigin>::signed(old_coldkey),
+            hotkey,
+            1000,
+            MIN_LOCK_BLOCKS
+        ));
+
+        let mut weight = Weight::zero();
+        assert_ok!(SubtensorModule::perform_swap_coldkey(
+            &old_coldkey,
+            &new_coldkey,
+            &mut weight
+        ));
+
+        // The lock moved with the stake, term intact.
+        let (old_locked, _) = crate::StakeLock::<Test>::get(&old_coldkey, &hotkey);
+        assert_eq!(old_locked, 0);
+        let (new_locked, new_unlock) = crate::StakeLock::<Test>::get(&new_coldkey, &hotkey);
+        assert_eq!(new_locked, 1000);
+        assert_eq!(new_unlock, 1 + MIN_LOCK_BLOCKS);
+
+        // And the new coldkey is still held to the term.
+        assert_noop!(
+            SubtensorModule::remove_stake(
+                <<Test as Config>::RuntimeOrigin>::signed(new_coldkey),
+                hotkey,
+                1000
+            ),
+            Error::<Test>::StakeStillLocked
+        );
     });
 }

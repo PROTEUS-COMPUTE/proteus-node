@@ -320,6 +320,19 @@ impl<T: Config> Pallet<T> {
             );
             weight.saturating_accrue(T::DbWeight::get().reads_writes(1, 1));
 
+            // The lock follows the stake, exactly as it does on a coldkey swap.
+            let (old_locked, old_unlock) = StakeLock::<T>::get(&coldkey, old_hotkey);
+            if old_locked > 0 {
+                StakeLock::<T>::remove(&coldkey, old_hotkey);
+                StakeLock::<T>::mutate(&coldkey, new_hotkey, |lock| {
+                    lock.0 = lock.0.saturating_add(old_locked);
+                    if old_unlock > lock.1 {
+                        lock.1 = old_unlock;
+                    }
+                });
+                weight.saturating_accrue(T::DbWeight::get().reads_writes(2, 2));
+            }
+
             // Swap StakingHotkeys.
             // StakingHotkeys( coldkey ) --> Vec<hotkey> -- the hotkeys that the coldkey stakes.
             let mut staking_hotkeys = StakingHotkeys::<T>::get(&coldkey);

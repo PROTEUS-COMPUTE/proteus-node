@@ -8,7 +8,7 @@ pub fn localnet_config(single_authority: bool) -> Result<ChainSpec, String> {
 
     // Give front-ends necessary data to present to users
     let mut properties = sc_service::Properties::new();
-    properties.insert("tokenSymbol".into(), "TAO".into());
+    properties.insert("tokenSymbol".into(), "PRTS".into());
     properties.insert("tokenDecimals".into(), 9.into());
     properties.insert("ss58Format".into(), 42.into());
 
@@ -25,9 +25,9 @@ pub fn localnet_config(single_authority: bool) -> Result<ChainSpec, String> {
             ..Default::default()
         },
     )
-    .with_name("Bittensor")
-    .with_protocol_id("bittensor")
-    .with_id("bittensor")
+    .with_name("PROTEUS")
+    .with_protocol_id("proteus")
+    .with_id("proteus")
     .with_chain_type(ChainType::Development)
     .with_genesis_config_patch(localnet_genesis(
         // Initial PoA authorities (Validators)
@@ -76,6 +76,13 @@ fn localnet_genesis(
         (
             get_account_id_from_seed::<sr25519::Public>("Ferdie"),
             2000000000000u128,
+        ),
+        // PROTEUS premine, 5% of the 21M cap. This is the LOCAL chain spec, so it
+        // uses the //Founder development seed; the mainnet genesis carries the
+        // real founder coldkey instead.
+        (
+            get_account_id_from_seed::<sr25519::Public>("Founder"),
+            1_050_000_000_000_000u128,
         ),
     ];
 

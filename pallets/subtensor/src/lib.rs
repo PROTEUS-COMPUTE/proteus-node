@@ -795,6 +795,19 @@ pub mod pallet {
         DefaultAccountTake<T>,
     >;
     #[pallet::storage]
+    /// DMAP ( cold, hot ) --> (locked_amount, unlock_block) | opt-in locked
+    /// staking. Non-custodial: the stake stays the owner's, the chain just
+    /// refuses remove_stake for the locked amount until unlock_block.
+    pub type StakeLock<T: Config> = StorageDoubleMap<
+        _,
+        Identity,
+        T::AccountId,
+        Identity,
+        T::AccountId,
+        (u64, u64),
+        ValueQuery,
+    >;
+    #[pallet::storage]
     /// Map ( hot ) --> last_hotkey_emission_drain | Last block we drained this hotkey's emission.
     pub type LastHotkeyEmissionDrain<T: Config> = StorageMap<
         _,
